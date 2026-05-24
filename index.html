@@ -937,9 +937,21 @@ document.getElementById('btn-download').addEventListener('click', async () => {
 });
 
 // ── Clear ─────────────────────────────────────────────────────────────────────
-document.getElementById('btn-clear').addEventListener('click', () => {
-  if (!confirm('¿Borrar el caché y limpiar todo?')) return;
+document.getElementById('btn-clear').addEventListener('click', async () => {
+  if (!confirm('¿Borrar caché y limpiar todo?')) return;
+  // 1. Clear worksheet data cache
   localStorage.removeItem(CACHE_KEY);
+  // 2. Clear all SW caches
+  if ('caches' in window) {
+    const keys = await caches.keys();
+    await Promise.all(keys.map(k => caches.delete(k)));
+  }
+  // 3. Unregister service worker so fresh files load
+  if ('serviceWorker' in navigator) {
+    const regs = await navigator.serviceWorker.getRegistrations();
+    await Promise.all(regs.map(r => r.unregister()));
+  }
+  // 4. Clear form
   document.getElementById('ws-input').value = '';
   document.getElementById('grade').value = '';
   document.getElementById('topic').value = '';
@@ -947,6 +959,8 @@ document.getElementById('btn-clear').addEventListener('click', () => {
   document.getElementById('ws-preview').innerHTML = '';
   document.getElementById('output-section').classList.remove('visible');
   hideStatus();
+  // 5. Hard reload to get fresh files
+  window.location.reload(true);
 });
 
 // ── Service Worker ────────────────────────────────────────────────────────────

@@ -22,12 +22,18 @@ self.addEventListener('activate', e => {
 });
 
 self.addEventListener('fetch', e => {
-  // Groq API calls — always network, never cache
-  if (e.request.url.includes('groq.com')) {
+  if (e.request.url.includes('groq.com') || e.request.url.includes('fonts.googleapis')) {
     e.respondWith(fetch(e.request));
     return;
   }
-  // Everything else — cache first
+  // Network first for HTML — always get fresh index.html
+  if (e.request.url.endsWith('.html') || e.request.url.endsWith('/')) {
+    e.respondWith(
+      fetch(e.request).catch(() => caches.match(e.request))
+    );
+    return;
+  }
+  // Cache first for everything else
   e.respondWith(
     caches.match(e.request).then(cached => cached || fetch(e.request))
   );
