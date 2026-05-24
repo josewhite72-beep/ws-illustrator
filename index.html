@@ -463,6 +463,10 @@ textarea::placeholder { color: var(--gray-400); }
       </select>
       <input type="text" id="topic" placeholder="Scenario / Topic (ej: Nice Weather Today!)">
     </div>
+    <div style="margin-top:10px;">
+      <input type="text" id="extra-words" placeholder="➕ Palabras extra para ilustrar (separadas por coma): ej. seed, garden, bottle" style="width:100%;">
+      <div class="key-hint" style="margin-top:5px;">Agrega palabras que quieres ilustrar aunque no estén en el worksheet.</div>
+    </div>
   </div>
 
   <!-- Input -->
@@ -505,10 +509,15 @@ rainy  →  🌧️"></textarea>
   <div id="output-section">
     <div class="output-actions">
       <span>✅ Worksheet listo</span>
-      <div style="display:flex;gap:8px;">
+      <div style="display:flex;gap:8px;flex-wrap:wrap;">
+        <button class="btn btn-secondary" id="btn-edit">✏️ Editar</button>
         <button class="btn btn-teal" id="btn-download">⬇️ Descargar PDF</button>
         <button class="btn btn-secondary" id="btn-print">🖨️ Imprimir</button>
       </div>
+    </div>
+    <div id="edit-bar" style="display:none;background:#fef9c3;border:1.5px solid #fde047;border-radius:8px;padding:10px 14px;margin-bottom:10px;font-size:13px;color:#713f12;">
+      ✏️ <strong>Modo edición activado</strong> — Haz clic en cualquier texto para editarlo directamente.
+      <button id="btn-done-edit" style="margin-left:12px;padding:4px 12px;background:#16a34a;color:white;border:none;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;">✅ Listo</button>
     </div>
     <div id="ws-preview"></div>
   </div>
@@ -732,7 +741,12 @@ function renderActivity(section, num) {
     if (item.itemType === 'write') {
       return `<div class="item">${i+1}. ${item.text || ''}</div><div class="write-line"></div>`;
     }
-    return `<div class="item">${i+1}. ${item.text || ''}</div>`;
+    // default — treat as blank if contains ___, else plain text with write line
+    if ((item.text || '').includes('___')) {
+      const t = (item.text || '').replace(/___+/g, '<span class="blank">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span>');
+      return `<div class="item">${i+1}. ${t}</div>`;
+    }
+    return `<div class="item">${i+1}. ${item.text || ''}</div><div class="write-line"></div>`;
   }).join('');
 
   return `<div class="section-title">${icon} Activity ${num}: ${section.label}</div>
@@ -745,8 +759,11 @@ function renderActivity(section, num) {
 function renderDraw(section) {
   return `<div class="section-title">${SVG.draw_icon} ${section.label || 'Draw it!'}</div>
   ${section.prompt ? `<div class="instructions" style="margin-bottom:8px;">${section.prompt}</div>` : ''}
-  <div class="draw-box">✏️ Draw here</div>`;
+  <div class="draw-box" style="min-height:130px;">✏️ Draw here</div>`;
 }
+
+// track rendered draw sections to avoid duplicates
+let _drawCount = 0;
 
 function renderSelfCheck(section) {
   const rows = (section.items || []).map(it =>
@@ -761,9 +778,19 @@ function renderSelfCheck(section) {
   </div>`;
 }
 
-function renderWorksheet(data, grade, topic) {
+function renderWorksheet(data, grade, topic, extraWords) {
   let actNum = 0;
-  const half = Math.ceil((data.sections || []).length / 2);
+  _drawCount = 0;
+  const sections = JSON.parse(JSON.stringify(data.sections || []));
+  const half = Math.ceil(sections.length / 2);
+
+  // inject extra words into first wordbank, or prepend one
+  if (extraWords && extraWords.length > 0) {
+    const wb = sections.find(s => s.type === 'wordbank');
+    if (wb) wb.words = [...new Set([...(wb.words || []), ...extraWords])];
+    else sections.unshift({ type: 'wordbank', label: 'Word Bank', words: extraWords });
+  }
+
   let html = `
     <h1>📝 ${data.title || 'My Worksheet'}</h1>
     <div class="ws-subtitle">${grade || ''} ${topic ? '— ' + topic : ''}</div>
@@ -773,13 +800,16 @@ function renderWorksheet(data, grade, topic) {
       <div class="id-field">Group: <span class="id-line">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span></div>
     </div>`;
 
-  (data.sections || []).forEach((s, i) => {
-    if (i === half && (data.sections || []).length > 4) {
+  sections.forEach((s, i) => {
+    if (i === half && sections.length > 4) {
       html += `<div class="page-break">✂ ─ ─ ─ ─ ─ page 2 ─ ─ ─ ─ ─</div>`;
     }
-    if (s.type === 'wordbank')   html += renderWordBank(s);
-    else if (s.type === 'activity') { actNum++; html += renderActivity(s, actNum); }
-    else if (s.type === 'draw')   html += renderDraw(s);
+    if (s.type === 'wordbank')       html += renderWordBank(s);
+    else if (s.type === 'activity')  { actNum++; html += renderActivity(s, actNum); }
+    else if (s.type === 'draw') {
+      if (_drawCount === 0) html += renderDraw(s);
+      _drawCount++;
+    }
     else if (s.type === 'selfcheck') html += renderSelfCheck(s);
   });
 
@@ -815,9 +845,11 @@ document.getElementById('btn-generate').addEventListener('click', async () => {
 
   try {
     setStatus('Generando ilustraciones...', 'loading');
+    const extraWords = document.getElementById('extra-words').value
+      .split(',').map(w => w.trim()).filter(Boolean);
     const data = await callGroq(text, grade, topic, apiKey);
     setStatus('Renderizando worksheet...', 'loading');
-    const html = renderWorksheet(data, grade, topic);
+    const html = renderWorksheet(data, grade, topic, extraWords);
     document.getElementById('ws-preview').innerHTML = html;
     document.getElementById('output-section').classList.add('visible');
     document.getElementById('ws-preview').scrollIntoView({ behavior: 'smooth' });
@@ -832,6 +864,44 @@ document.getElementById('btn-generate').addEventListener('click', async () => {
 
 // ── Print ─────────────────────────────────────────────────────────────────────
 document.getElementById('btn-print').addEventListener('click', () => window.print());
+
+// ── Edit mode ─────────────────────────────────────────────────────────────────
+let editMode = false;
+document.getElementById('btn-edit').addEventListener('click', () => {
+  editMode = !editMode;
+  const preview = document.getElementById('ws-preview');
+  const bar     = document.getElementById('edit-bar');
+  const btn     = document.getElementById('btn-edit');
+  if (editMode) {
+    preview.contentEditable = 'true';
+    preview.style.outline = '2px dashed #7c3aed';
+    preview.style.borderRadius = '8px';
+    bar.style.display = 'block';
+    btn.textContent = '🔒 Bloquear';
+    btn.style.background = '#fef9c3';
+    btn.style.color = '#713f12';
+    preview.focus();
+  } else {
+    preview.contentEditable = 'false';
+    preview.style.outline = '';
+    bar.style.display = 'none';
+    btn.textContent = '✏️ Editar';
+    btn.style.background = '';
+    btn.style.color = '';
+  }
+});
+document.getElementById('btn-done-edit').addEventListener('click', () => {
+  editMode = false;
+  const preview = document.getElementById('ws-preview');
+  const bar     = document.getElementById('edit-bar');
+  const btn     = document.getElementById('btn-edit');
+  preview.contentEditable = 'false';
+  preview.style.outline = '';
+  bar.style.display = 'none';
+  btn.textContent = '✏️ Editar';
+  btn.style.background = '';
+  btn.style.color = '';
+});
 
 // ── Download PDF ──────────────────────────────────────────────────────────────
 document.getElementById('btn-download').addEventListener('click', async () => {
@@ -873,6 +943,7 @@ document.getElementById('btn-clear').addEventListener('click', () => {
   document.getElementById('ws-input').value = '';
   document.getElementById('grade').value = '';
   document.getElementById('topic').value = '';
+  document.getElementById('extra-words').value = '';
   document.getElementById('ws-preview').innerHTML = '';
   document.getElementById('output-section').classList.remove('visible');
   hideStatus();
