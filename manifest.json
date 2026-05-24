@@ -1,0 +1,28 @@
+{
+  "name": "Worksheet Illustrator — MEDUCA",
+  "short_name": "WS Illustrator",
+  "description": "Agrega ilustraciones coloridas a worksheets de inglés para MEDUCA Panamá",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#7c3aed",
+  "orientation": "portrait-primary",
+  "dir": "ltr",
+  "lang": "es",
+  "categories": ["education", "productivity"],
+  "icons": [
+    {
+      "src": "icon192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "icon512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
