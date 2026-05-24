@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ws-illustrator-v1';
+const CACHE_NAME = 'ws-illustrator-v2';
 const ASSETS = [
   './',
   './index.html',
