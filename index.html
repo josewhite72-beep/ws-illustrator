@@ -401,6 +401,37 @@ textarea::placeholder { color: var(--gray-400); }
   box-shadow: 0 4px 12px rgba(0,0,0,0.2);
 }
 
+/* ── Tabs ── */
+.tab-btn {
+  flex: 1; padding: 9px 14px;
+  font-family: 'Nunito', sans-serif;
+  font-size: 13px; font-weight: 600;
+  border: none; cursor: pointer;
+  background: var(--gray-50);
+  color: var(--gray-600);
+  transition: all 0.15s;
+}
+.tab-btn.active {
+  background: var(--purple);
+  color: white;
+}
+.tab-btn:hover:not(.active) { background: var(--gray-100); }
+
+/* ── Drop zone ── */
+#drop-zone {
+  display: block; cursor: pointer;
+  border: 2px dashed var(--gray-200);
+  border-radius: var(--radius);
+  padding: 28px 16px;
+  text-align: center;
+  transition: all 0.2s;
+  background: var(--gray-50);
+}
+#drop-zone:hover, #drop-zone.drag-over {
+  border-color: var(--purple);
+  background: var(--purple-light);
+}
+
 /* ── Print ── */
 @media print {
   body { background: white; }
@@ -472,7 +503,16 @@ textarea::placeholder { color: var(--gray-400); }
   <!-- Input -->
   <div class="card">
     <div class="card-title">📄 Contenido del Worksheet</div>
-    <textarea id="ws-input" placeholder="Pega aquí el contenido de tu worksheet...
+
+    <!-- Tab switcher -->
+    <div style="display:flex;gap:0;margin-bottom:12px;border:1.5px solid var(--gray-200);border-radius:var(--radius-sm);overflow:hidden;">
+      <button class="tab-btn active" id="tab-text" onclick="switchTab('text')">✏️ Pegar texto</button>
+      <button class="tab-btn" id="tab-file" onclick="switchTab('file')">📎 Subir archivo</button>
+    </div>
+
+    <!-- Text tab -->
+    <div id="panel-text">
+      <textarea id="ws-input" placeholder="Pega aquí el contenido de tu worksheet...
 
 Ejemplo:
 Name: ___________  Date: ___________
@@ -484,11 +524,25 @@ Activity 1 - Fill in the blank:
 2. The weather is _______.
 
 Activity 2 - Draw the weather:
-[draw box]
+[draw box]"></textarea>
+    </div>
 
-Activity 3 - Match:
-sunny  →  ☀️
-rainy  →  🌧️"></textarea>
+    <!-- File tab -->
+    <div id="panel-file" style="display:none;">
+      <label id="drop-zone">
+        <input type="file" id="file-input" accept=".docx,.pdf" style="display:none;">
+        <div id="drop-inner">
+          <div style="font-size:40px;margin-bottom:8px;">📎</div>
+          <div style="font-weight:700;font-size:14px;margin-bottom:4px;">Arrastra tu archivo aquí</div>
+          <div style="font-size:12px;color:var(--gray-400);">o toca para seleccionar</div>
+          <div style="font-size:11px;color:var(--gray-400);margin-top:6px;">Word (.docx) · PDF (.pdf)</div>
+        </div>
+      </label>
+      <div id="file-status" style="display:none;margin-top:10px;padding:10px 14px;background:var(--teal-light);border-radius:var(--radius-sm);font-size:13px;color:#065f46;font-weight:600;display:flex;align-items:center;gap:8px;">
+        <span id="file-status-icon">✅</span>
+        <span id="file-status-text"></span>
+      </div>
+    </div>
 
     <div class="btn-row" style="margin-top:12px;">
       <button class="btn btn-primary" id="btn-generate">
@@ -529,6 +583,8 @@ rainy  →  🌧️"></textarea>
 <!-- jsPDF + html2canvas -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 
 <script>
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -888,12 +944,21 @@ function hideStatus() {
 // ── Generate ──────────────────────────────────────────────────────────────────
 document.getElementById('btn-generate').addEventListener('click', async () => {
   const apiKey = document.getElementById('api-key').value.trim();
-  const text   = document.getElementById('ws-input').value.trim();
   const grade  = document.getElementById('grade').value;
   const topic  = document.getElementById('topic').value.trim();
 
-  if (!apiKey) { setStatus('❌ Ingresa tu Groq API key primero.', 'error'); return; }
-  if (!text)   { setStatus('❌ Pega el contenido del worksheet.', 'error'); return; }
+  // Get content from active tab
+  const wsText = activeTab === 'file'
+    ? extractedText
+    : document.getElementById('ws-input').value.trim();
+
+  if (!apiKey)  { setStatus('❌ Ingresa tu Groq API key primero.', 'error'); return; }
+  if (!wsText)  {
+    setStatus(activeTab === 'file'
+      ? '❌ Sube un archivo primero.'
+      : '❌ Pega el contenido del worksheet.', 'error');
+    return;
+  }
 
   const btn = document.getElementById('btn-generate');
   btn.disabled = true;
@@ -903,7 +968,7 @@ document.getElementById('btn-generate').addEventListener('click', async () => {
     setStatus('Generando ilustraciones...', 'loading');
     const extraWords = document.getElementById('extra-words').value
       .split(',').map(w => w.trim()).filter(Boolean);
-    const data = await callGroq(text, grade, topic, apiKey);
+    const data = await callGroq(wsText, grade, topic, apiKey);
     setStatus('Renderizando worksheet...', 'loading');
     const html = renderWorksheet(data, grade, topic, extraWords);
     document.getElementById('ws-preview').innerHTML = html;
@@ -1012,11 +1077,118 @@ document.getElementById('btn-clear').addEventListener('click', async () => {
   document.getElementById('grade').value = '';
   document.getElementById('topic').value = '';
   document.getElementById('extra-words').value = '';
+  document.getElementById('file-input').value = '';
+  extractedText = '';
+  setFileStatus('', '', false);
+  switchTab('text');
   document.getElementById('ws-preview').innerHTML = '';
   document.getElementById('output-section').classList.remove('visible');
   hideStatus();
   // 5. Hard reload to get fresh files
   window.location.reload(true);
+});
+
+// ── Tab switching ────────────────────────────────────────────────────────────
+let activeTab = 'text';
+let extractedText = '';
+
+function switchTab(tab) {
+  activeTab = tab;
+  document.getElementById('panel-text').style.display = tab === 'text' ? 'block' : 'none';
+  document.getElementById('panel-file').style.display = tab === 'file' ? 'block' : 'none';
+  document.getElementById('tab-text').classList.toggle('active', tab === 'text');
+  document.getElementById('tab-file').classList.toggle('active', tab === 'file');
+}
+
+// ── File extraction ───────────────────────────────────────────────────────────
+async function extractFromFile(file) {
+  const ext = file.name.split('.').pop().toLowerCase();
+  setFileStatus('⏳', 'Extrayendo texto...');
+
+  if (ext === 'docx') {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = async e => {
+        try {
+          const result = await mammoth.extractRawText({ arrayBuffer: e.target.result });
+          resolve(result.value.trim());
+        } catch(err) { reject(err); }
+      };
+      reader.onerror = reject;
+      reader.readAsArrayBuffer(file);
+    });
+  }
+
+  if (ext === 'pdf') {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = async e => {
+        try {
+          pdfjsLib.GlobalWorkerOptions.workerSrc =
+            'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+          const pdf = await pdfjsLib.getDocument({ data: e.target.result }).promise;
+          let fullText = '';
+          for (let i = 1; i <= pdf.numPages; i++) {
+            const page = await pdf.getPage(i);
+            const content = await page.getTextContent();
+            fullText += content.items.map(item => item.str).join(' ') + '\n';
+          }
+          resolve(fullText.trim());
+        } catch(err) { reject(err); }
+      };
+      reader.onerror = reject;
+      reader.readAsArrayBuffer(file);
+    });
+  }
+
+  throw new Error('Formato no soportado. Usa .docx o .pdf');
+}
+
+function setFileStatus(icon, msg, show = true) {
+  const el = document.getElementById('file-status');
+  el.style.display = show ? 'flex' : 'none';
+  document.getElementById('file-status-icon').textContent = icon;
+  document.getElementById('file-status-text').textContent = msg;
+}
+
+// ── File input handler ────────────────────────────────────────────────────────
+document.getElementById('file-input').addEventListener('change', async e => {
+  const file = e.target.files[0];
+  if (!file) return;
+  try {
+    setFileStatus('⏳', `Procesando ${file.name}...`);
+    extractedText = await extractFromFile(file);
+    const words = extractedText.split(/\s+/).length;
+    setFileStatus('✅', `${file.name} — ${words} palabras extraídas`);
+  } catch(err) {
+    setFileStatus('❌', 'Error: ' + err.message);
+    extractedText = '';
+  }
+});
+
+// ── Drag & drop ───────────────────────────────────────────────────────────────
+const dropZone = document.getElementById('drop-zone');
+dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
+dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
+dropZone.addEventListener('drop', async e => {
+  e.preventDefault();
+  dropZone.classList.remove('drag-over');
+  const file = e.dataTransfer.files[0];
+  if (!file) return;
+  const ext = file.name.split('.').pop().toLowerCase();
+  if (!['docx','pdf'].includes(ext)) {
+    setFileStatus('❌', 'Solo se aceptan archivos .docx o .pdf');
+    return;
+  }
+  try {
+    setFileStatus('⏳', `Procesando ${file.name}...`);
+    extractedText = await extractFromFile(file);
+    const words = extractedText.split(/\s+/).length;
+    setFileStatus('✅', `${file.name} — ${words} palabras extraídas`);
+  } catch(err) {
+    setFileStatus('❌', 'Error: ' + err.message);
+    extractedText = '';
+  }
 });
 
 // ── Service Worker ────────────────────────────────────────────────────────────
